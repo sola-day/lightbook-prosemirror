@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>lightbook-prosemirror — example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../src/style.css" />
+    <link rel="stylesheet" href="./example.css" />
+  </head>
+  <body>
+    <header class="lb-page-header">
+      <h1>lightbook-prosemirror</h1>
+      <p>
+        Shared ProseMirror editor core for Lightbook — Outline-style rich
+        blocks and tables, Markdown import/export, Google-Docs-style
+        comments &amp; suggesting, and Yjs realtime collaboration. Built
+        fresh for this package, not copied from Outline.
+      </p>
+    </header>
+
+    <section class="lb-panel">
+      <h2>Realtime collaboration (two editors, one Yjs doc)</h2>
+      <p class="lb-hint">
+        Type in either pane — both stay in sync through the same in-memory
+        Y.Doc via <code>y-prosemirror</code>, with live remote cursors.
+      </p>
+      <div class="lb-collab-grid">
+        <div>
+          <div class="lb-user-badge" id="user-a-badge"></div>
+          <div id="editor-a" class="lb-editor lb-editor-bordered"></div>
+        </div>
+        <div>
+          <div class="lb-user-badge" id="user-b-badge"></div>
+          <div id="editor-b" class="lb-editor lb-editor-bordered"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="lb-panel">
+      <h2>Comments &amp; suggestion mode</h2>
+      <p class="lb-hint">
+        Select text in Editor A, then use the toolbar to add a comment or
+        toggle "Suggesting" mode (deletions show struck-through, insertions
+        underlined, until accepted/rejected).
+      </p>
+      <div class="lb-toolbar">
+        <button id="btn-comment">💬 Comment on selection</button>
+        <button id="btn-suggest">✏️ Toggle suggesting</button>
+        <span id="suggest-status" class="lb-status"></span>
+      </div>
+      <div class="lb-comments-layout">
+        <div id="editor-a-mirror-note" class="lb-hint">
+          (Comments/suggestions above apply to Editor A — scroll up.)
+        </div>
+        <aside class="lb-threads">
+          <h3>Threads</h3>
+          <ul id="thread-list"></ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="lb-panel">
+      <h2>Markdown import / export</h2>
+      <p class="lb-hint">
+        Export serializes Editor A's document to Markdown (tables included);
+        paste Markdown below and import to load it into a standalone editor.
+      </p>
+      <div class="lb-md-grid">
+        <div>
+          <button id="btn-export-md">Export Editor A → Markdown</button>
+          <textarea id="md-output" rows="14" readonly placeholder="Markdown output appears here"></textarea>
+        </div>
+        <div>
+          <textarea id="md-input" rows="14" placeholder="# Paste markdown here
+
+- with lists
+- and tables
+
+| a | b |
+| --- | --- |
+| 1 | 2 |"></textarea>
+          <button id="btn-import-md">Import Markdown → editor below</button>
+          <div id="editor-md" class="lb-editor lb-editor-bordered"></div>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
