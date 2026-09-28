@@ -1,13 +1,32 @@
 import { Plugin, PluginKey, EditorState, Transaction, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { ReplaceStep } from "prosemirror-transform";
+import { isHistoryTransaction } from "prosemirror-history";
 import { lightbookSchema as schema } from "../schema";
 
 export const suggestionPluginKey = new PluginKey<SuggestionState>("lightbook-suggestion");
 
+/** Where in the doc a still-pending suggestionId's tagged span(s) currently are. */
+interface SuggestionRange {
+  insertFrom?: number;
+  insertTo?: number;
+  deleteFrom?: number;
+  deleteTo?: number;
+}
+
 export interface SuggestionState {
   /** Non-null while the editor is in "Suggesting" mode; carries the current author. */
   active: { authorId: string } | null;
+  /**
+   * suggestionId -> its current position range(s), kept incrementally in
+   * sync (see `apply` below) instead of being recomputed by scanning the
+   * whole document. `acceptSuggestion`/`rejectSuggestion` read straight from
+   * this instead of a `doc.descendants` walk, so resolving a suggestion is
+   * O(pending suggestions) rather than O(document size) — the walk-based
+   * version got measurably slower as a document (and its edit history)
+   * grew, independent of how many suggestions were actually outstanding.
+   */
+  ranges: Map<string, SuggestionRange>;
 }
 
 function isMarkedDeleted(node: import("prosemirror-model").Node) {
@@ -25,6 +44,41 @@ function buildDecorations(doc: import("prosemirror-model").Node) {
     }
   });
   return DecorationSet.create(doc, decorations);
+}
+
+/** Remaps a stored [from, to) range through a transaction's position changes; returns null if it collapsed. */
+function mapRange(tr: Transaction, from: number, to: number): [number, number] | null {
+  const mappedFrom = tr.mapping.map(from, 1);
+  const mappedTo = tr.mapping.map(to, -1);
+  return mappedTo > mappedFrom ? [mappedFrom, mappedTo] : null;
+}
+
+function remapRanges(tr: Transaction, ranges: Map<string, SuggestionRange>): Map<string, SuggestionRange> {
+  const next = new Map<string, SuggestionRange>();
+  for (const [id, entry] of ranges) {
+    const remapped: SuggestionRange = {};
+    if (entry.insertFrom != null && entry.insertTo != null) {
+      const mapped = mapRange(tr, entry.insertFrom, entry.insertTo);
+      if (mapped) [remapped.insertFrom, remapped.insertTo] = mapped;
+    }
+    if (entry.deleteFrom != null && entry.deleteTo != null) {
+      const mapped = mapRange(tr, entry.deleteFrom, entry.deleteTo);
+      if (mapped) [remapped.deleteFrom, remapped.deleteTo] = mapped;
+    }
+    // Drop the id entirely once both its pieces have collapsed (e.g. the
+    // pending insertion got backspaced away for real — see the
+    // "allPendingInsert" pass-through below) rather than keeping a
+    // degenerate zero-width entry around forever.
+    if (remapped.insertFrom != null || remapped.deleteFrom != null) next.set(id, remapped);
+  }
+  return next;
+}
+
+interface SuggestionEdit {
+  tr: Transaction;
+  id: string;
+  insertRange: [number, number] | null;
+  deleteRange: [number, number] | null;
 }
 
 /**
@@ -53,13 +107,19 @@ function buildDecorations(doc: import("prosemirror-model").Node) {
  * more complex (multi-step transactions, cross-block deletes, list/wrap
  * commands) is left as a normal, un-tracked edit rather than risking a
  * corrupted document from a naive slice re-insertion.
+ *
+ * The returned `insertRange`/`deleteRange` are positions in `append`'s own
+ * resulting doc (not `newState`'s) — computed once here rather than
+ * re-derived by scanning, so the plugin's `apply` can record them directly
+ * into `SuggestionState.ranges` for `acceptSuggestion`/`rejectSuggestion` to
+ * use later without a doc walk.
  */
 function buildSuggestionAppend(
   userEdit: Transaction,
   oldState: EditorState,
   newState: EditorState,
   authorId: string
-): Transaction | null {
+): SuggestionEdit | null {
   if (userEdit.steps.length !== 1) return null;
   const step = userEdit.steps[0];
   if (!(step instanceof ReplaceStep)) return null;
@@ -85,7 +145,8 @@ function buildSuggestionAppend(
   // the existing suggestion_insert mark and rendered as underline (insert
   // styling) AND strikethrough (delete styling) at once. Deleting text that
   // was never committed should just cancel it for real — return `null` so
-  // `newState`'s already-real deletion stands untouched.
+  // `newState`'s already-real deletion stands untouched (and `apply` below
+  // will naturally shrink/drop that id's `insertRange` via `remapRanges`).
   if (deletedSize > 0) {
     let allPendingInsert = true;
     deletedSlice.content.forEach((node) => {
@@ -115,14 +176,23 @@ function buildSuggestionAppend(
     oldState.selection.from === step.to;
 
   const append = newState.tr;
+  let insertRange: [number, number] | null = null;
+  let deleteRange: [number, number] | null = null;
   try {
     if (insertedSize > 0) {
       append.addMark(step.from, step.from + insertedSize, insertMark);
+      // Valid as final positions in `append`'s resulting doc: nothing this
+      // function does afterwards inserts/deletes content *before*
+      // `step.from + insertedSize` (the later reinsert, if any, always
+      // lands at exactly that boundary or later — see below), only
+      // addMark/removeMark calls, which never shift positions.
+      insertRange = [step.from, step.from + insertedSize];
     }
     if (deletedSize > 0) {
       const reinsertAt = step.from + insertedSize;
       append.insert(reinsertAt, deletedSlice.content);
       append.addMark(reinsertAt, reinsertAt + deletedSize, deleteMark);
+      deleteRange = [reinsertAt, reinsertAt + deletedSize];
       if (isBackspace) {
         append.setSelection(TextSelection.create(append.doc, reinsertAt));
       }
@@ -135,7 +205,7 @@ function buildSuggestionAppend(
     return null;
   }
 
-  return append;
+  return { tr: append, id, insertRange, deleteRange };
 }
 
 export function suggestionPlugin(getAuthorId: () => string) {
@@ -143,14 +213,24 @@ export function suggestionPlugin(getAuthorId: () => string) {
     key: suggestionPluginKey,
     state: {
       init() {
-        return { active: null } as SuggestionState;
+        return { active: null, ranges: new Map() } as SuggestionState;
       },
       apply(tr, value) {
         const meta = tr.getMeta(suggestionPluginKey);
-        if (meta?.setActive !== undefined) {
-          return { active: meta.setActive };
+        const active = meta?.setActive !== undefined ? meta.setActive : value.active;
+
+        let ranges = tr.docChanged ? remapRanges(tr, value.ranges) : value.ranges;
+        if (meta?.removeRange) {
+          if (ranges === value.ranges) ranges = new Map(ranges);
+          ranges.delete(meta.removeRange);
         }
-        return value;
+        if (meta?.addRange) {
+          if (ranges === value.ranges) ranges = new Map(ranges);
+          const { id, ...entry } = meta.addRange as SuggestionRange & { id: string };
+          ranges.set(id, entry);
+        }
+
+        return { active, ranges };
       },
     },
     props: {
@@ -162,21 +242,32 @@ export function suggestionPlugin(getAuthorId: () => string) {
       const pluginState = suggestionPluginKey.getState(oldState);
       if (!pluginState?.active) return null;
 
+      // Undo/redo restores an old doc wholesale rather than applying an
+      // incremental edit. Without this guard, undoing while still in
+      // Suggesting mode would be picked up as `userEdit` below and get
+      // rewrapped in a brand-new suggestion span on every Cmd+Z, the same
+      // class of bug fixed in lightbook-lexical via $hasUpdateTag(HISTORIC_TAG)
+      // — `isHistoryTransaction` is prosemirror-history's equivalent, public
+      // API for "this transaction came from undo/redo".
       const userEdit = transactions.find(
-        (tr) => tr.docChanged && !tr.getMeta("suggestion-rewrite")
+        (tr) => tr.docChanged && !tr.getMeta("suggestion-rewrite") && !isHistoryTransaction(tr)
       );
       if (!userEdit) return null;
 
-      const append = buildSuggestionAppend(
-        userEdit,
-        oldState,
-        newState,
-        pluginState.active.authorId
-      );
-      if (!append) return null;
+      const built = buildSuggestionAppend(userEdit, oldState, newState, pluginState.active.authorId);
+      if (!built) return null;
 
-      append.setMeta("suggestion-rewrite", true);
-      return append;
+      built.tr.setMeta("suggestion-rewrite", true);
+      built.tr.setMeta(suggestionPluginKey, {
+        addRange: {
+          id: built.id,
+          insertFrom: built.insertRange?.[0],
+          insertTo: built.insertRange?.[1],
+          deleteFrom: built.deleteRange?.[0],
+          deleteTo: built.deleteRange?.[1],
+        },
+      });
+      return built.tr;
     },
   });
 }
@@ -196,36 +287,60 @@ export function setSuggesting(
   return true;
 }
 
+/**
+ * Shared accept/reject: `keep` says which side of the suggestion becomes
+ * real content (its mark is stripped) — the other side is deleted outright.
+ * Reads the range straight from `SuggestionState.ranges` (see its docstring)
+ * instead of a `state.doc.descendants` walk.
+ */
+function resolveSuggestion(
+  state: EditorState,
+  dispatch: ((tr: Transaction) => void) | undefined,
+  suggestionId: string,
+  keep: "insert" | "delete"
+): boolean {
+  const pluginState = suggestionPluginKey.getState(state);
+  const entry = pluginState?.ranges.get(suggestionId);
+  // Already resolved (or never existed): cheap no-op, same as the old
+  // walk-based version finding nothing to touch — just without the walk.
+  if (!entry) return false;
+
+  const tr = state.tr;
+  const keepFrom = keep === "insert" ? entry.insertFrom : entry.deleteFrom;
+  const keepTo = keep === "insert" ? entry.insertTo : entry.deleteTo;
+  const dropFrom = keep === "insert" ? entry.deleteFrom : entry.insertFrom;
+  const dropTo = keep === "insert" ? entry.deleteTo : entry.insertTo;
+
+  if (keepFrom != null && keepTo != null) {
+    // `suggestion_insert`/`suggestion_delete` are self-excluding (see
+    // schema/marks.ts), so at most one mark of this type can be present in
+    // a range this controller itself created — removing by MarkType is safe
+    // and doesn't require re-deriving the exact Mark instance/attrs.
+    const markType = keep === "insert" ? schema.marks.suggestion_insert : schema.marks.suggestion_delete;
+    tr.removeMark(tr.mapping.map(keepFrom), tr.mapping.map(keepTo), markType);
+  }
+  if (dropFrom != null && dropTo != null) {
+    tr.delete(tr.mapping.map(dropFrom), tr.mapping.map(dropTo));
+  }
+
+  // See the old version's comment: bypass re-interception while suggesting
+  // is still active, and drop this id from the index now that it's fully
+  // resolved (both remapping-to-collapse and this explicit removal matter:
+  // remapping alone wouldn't clear the *kept* side, which never shrinks to
+  // zero width — its mark is stripped, not deleted).
+  tr.setMeta("suggestion-rewrite", true);
+  tr.setMeta(suggestionPluginKey, { removeRange: suggestionId });
+  if (dispatch) dispatch(tr);
+  return true;
+}
+
 /** Accept a suggestion: drop deleted text for real, strip insert/delete marks. */
 export function acceptSuggestion(
   state: EditorState,
   dispatch: ((tr: Transaction) => void) | undefined,
   suggestionId: string
 ) {
-  const tr = state.tr;
-  const deletions: Array<[number, number]> = [];
-  state.doc.descendants((node, pos) => {
-    if (!node.isText) return;
-    const del = node.marks.find(
-      (m) => m.type.name === "suggestion_delete" && m.attrs.id === suggestionId
-    );
-    const ins = node.marks.find(
-      (m) => m.type.name === "suggestion_insert" && m.attrs.id === suggestionId
-    );
-    if (del) deletions.push([pos, pos + node.nodeSize]);
-    if (ins) tr.removeMark(pos, pos + node.nodeSize, ins);
-  });
-  // Delete ranges back-to-front so earlier positions stay valid.
-  for (const [from, to] of deletions.sort((a, b) => b[0] - a[0])) {
-    tr.delete(tr.mapping.map(from), tr.mapping.map(to));
-  }
-  // If suggesting mode is still active, the suggestion plugin's
-  // appendTransaction would otherwise re-intercept THIS transaction's own
-  // delete and turn it right back into a (new) tracked suggestion instead
-  // of actually resolving the one being accepted. Bypass it explicitly.
-  tr.setMeta("suggestion-rewrite", true);
-  if (dispatch) dispatch(tr);
-  return true;
+  return resolveSuggestion(state, dispatch, suggestionId, "insert");
 }
 
 /** Reject a suggestion: drop inserted text, restore deleted text (strip the delete mark). */
@@ -234,24 +349,5 @@ export function rejectSuggestion(
   dispatch: ((tr: Transaction) => void) | undefined,
   suggestionId: string
 ) {
-  const tr = state.tr;
-  const insertions: Array<[number, number]> = [];
-  state.doc.descendants((node, pos) => {
-    if (!node.isText) return;
-    const del = node.marks.find(
-      (m) => m.type.name === "suggestion_delete" && m.attrs.id === suggestionId
-    );
-    const ins = node.marks.find(
-      (m) => m.type.name === "suggestion_insert" && m.attrs.id === suggestionId
-    );
-    if (ins) insertions.push([pos, pos + node.nodeSize]);
-    if (del) tr.removeMark(pos, pos + node.nodeSize, del);
-  });
-  for (const [from, to] of insertions.sort((a, b) => b[0] - a[0])) {
-    tr.delete(tr.mapping.map(from), tr.mapping.map(to));
-  }
-  // See acceptSuggestion: bypass re-interception while suggesting is active.
-  tr.setMeta("suggestion-rewrite", true);
-  if (dispatch) dispatch(tr);
-  return true;
+  return resolveSuggestion(state, dispatch, suggestionId, "delete");
 }

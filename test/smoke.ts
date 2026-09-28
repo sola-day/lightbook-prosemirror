@@ -8,6 +8,7 @@
  * typechecking alone) — see each `assert` message for what broke.
  */
 import { EditorState, Transaction, TextSelection } from "prosemirror-state";
+import { history, undo } from "prosemirror-history";
 import { lightbookSchema as schema } from "../src/schema";
 import {
   commentsPlugin,
@@ -328,6 +329,67 @@ function assert(cond: unknown, msg: string) {
       `no text node ends up tagged both suggestion_insert AND suggestion_delete (node ${JSON.stringify(node.text)} had insert=${hasInsert} delete=${hasDelete})`
     );
   });
+}
+
+// --- Undo/redo while suggesting must not re-tag the restored content -----
+{
+  let state = EditorState.create({
+    schema,
+    doc: schema.node("doc", null, [schema.node("paragraph", null, [schema.text("abc")])]),
+    plugins: [history(), commentsPlugin(), suggestionPlugin(() => "alice")],
+  });
+  const dispatch = (tr: Transaction) => {
+    state = state.apply(tr);
+  };
+
+  setSuggesting(state, dispatch, "alice");
+  state = state.apply(state.tr.insertText("XYZ", state.doc.content.size - 1));
+  assert(state.doc.textContent === "abcXYZ", "typed insertion present before undo");
+
+  undo(state, dispatch);
+  assert(state.doc.textContent === "abc", "undo restores the pre-insertion text");
+
+  let taggedAfterUndo = false;
+  state.doc.descendants((node) => {
+    if (node.isText && node.marks.some((m) => m.type.name === "suggestion_insert" || m.type.name === "suggestion_delete")) {
+      taggedAfterUndo = true;
+    }
+  });
+  assert(!taggedAfterUndo, "undoing a suggested insertion doesn't get re-wrapped in a new suggestion span");
+}
+
+// --- accept/reject read from the incremental range index, not a doc walk -
+{
+  let state = EditorState.create({
+    schema,
+    doc: schema.node("doc", null, [schema.node("paragraph", null, [schema.text("abc")])]),
+    plugins: [commentsPlugin(), suggestionPlugin(() => "alice")],
+  });
+  const dispatch = (tr: Transaction) => {
+    state = state.apply(tr);
+  };
+
+  setSuggesting(state, dispatch, "alice");
+  state = state.apply(state.tr.insertText("XYZ", state.doc.content.size - 1));
+
+  let suggestionId: string | null = null;
+  state.doc.descendants((node) => {
+    const ins = node.marks.find((m) => m.type.name === "suggestion_insert");
+    if (ins) suggestionId = ins.attrs.id as string;
+  });
+  assert(!!suggestionId, "captured the suggestion id for the index test");
+
+  const before = suggestionPluginKey.getState(state)!.ranges.size;
+  assert(before === 1, `plugin state tracks exactly one pending range (got ${before})`);
+
+  const first = acceptSuggestion(state, dispatch, suggestionId!);
+  assert(first === true, "first accept reports success");
+  assert(state.doc.textContent === "abcXYZ", "first accept applies the insertion for real");
+  assert(suggestionPluginKey.getState(state)!.ranges.size === 0, "resolving the suggestion clears it from the range index");
+
+  const second = acceptSuggestion(state, dispatch, suggestionId!);
+  assert(second === false, "accepting an already-resolved suggestion id is a harmless no-op (index lookup, not a stale doc walk)");
+  assert(state.doc.textContent === "abcXYZ", "duplicate accept doesn't change the document");
 }
 
 if (failures > 0) {
