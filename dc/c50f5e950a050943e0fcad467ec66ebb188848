@@ -1,0 +1,74 @@
+src/style.css
+  s_9ae11b575f3312::t_63f26802f465c9 162-164
+  s_9ae11b575f3312::t_a99486a64f2215 159-161
+  s_9ae11b575f3312::t_e305112012d314 165-167
+  s_9ae11b575f3312::t_66d3e8b720fab6 1-158,168-196
+pnpm-lock.yaml
+  s_9ae11b575f3312::t_412726e1f2f845 1-980
+pnpm-workspace.yaml
+  s_9ae11b575f3312::t_955c7cbd91ff81 1-2
+.gitignore
+  s_9ae11b575f3312::t_329f2ad7b2a461 1-4
+README.md
+  s_9ae11b575f3312::t_c8a8a54edf5c66 1-61
+example/example.css
+  s_9ae11b575f3312::t_d5f701bc808e1b 1-64
+example/index.html
+  s_9ae11b575f3312::t_84f860b06d42bf 1-90
+example/main.ts
+  s_9ae11b575f3312::t_027ee11d4cd336 1-134
+package.json
+  s_9ae11b575f3312::t_84abe89d844525 1-46
+scripts/run-smoke-test.mjs
+  s_9ae11b575f3312::t_7db00c6d9df182 1-21
+src/collab.ts
+  s_9ae11b575f3312::t_f85158f590759d 1-64
+src/comments/index.ts
+  s_9ae11b575f3312::t_27a3f310e4171f 1-18
+src/comments/plugin.ts
+  s_9ae11b575f3312::t_43b4c87109ce98 1-122
+src/comments/suggestion.ts
+  s_9ae11b575f3312::t_dbd5b78922be69 1-257
+src/index.ts
+  s_9ae11b575f3312::t_42e26b209adb06 1-112
+src/keymap.ts
+  s_9ae11b575f3312::t_9cae4e6790a0ef 1-40
+src/markdown.ts
+  s_9ae11b575f3312::t_e5f345e9102b3b 1-348
+src/menus/blockMenu.ts
+  s_9ae11b575f3312::t_d6e9d7e75f40e5 1-312
+src/menus/index.ts
+  s_9ae11b575f3312::t_226a95e3f51ec5 1-3
+src/menus/selectionToolbar.ts
+  s_9ae11b575f3312::t_b28fb69e5fed00 1-199
+src/nodeviews/checkboxItem.ts
+  s_9ae11b575f3312::t_13d51ea93913e4 1-59
+src/schema/index.ts
+  s_9ae11b575f3312::t_e71ef050424a02 1-7
+src/schema/marks.ts
+  s_9ae11b575f3312::t_b1a975cdb515a3 1-175
+src/schema/nodes.ts
+  s_9ae11b575f3312::t_cec256eeaa6be7 1-227
+test/smoke.ts
+  s_9ae11b575f3312::t_82843523db656a 1-337
+tsconfig.json
+  s_9ae11b575f3312::t_a492401f29d46f 1-16
+vite.config.ts
+  s_9ae11b575f3312::t_a79289c71c9a1f 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dcc50f5e950a050943e0fcad467ec66ebb188848",
+  "prompts": {},
+  "sessions": {
+    "s_9ae11b575f3312": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b85c314d-106b-403a-b603-335e904d1d7f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "jiangplus <jiang.plus.times@gmail.com>"
+    }
+  }
+}
