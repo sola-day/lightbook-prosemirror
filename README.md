@@ -59,3 +59,7 @@ package directly instead of hand-rolling its own ProseMirror wiring — see
 `apps/web/src/components/RichTextEditor.tsx`, `SuggestionAnchors.ts`, and
 `CommentAnchors.ts` in the `lightbook` repo for the current in-app logic this
 is meant to replace.
+
+## License
+
+[Apache License 2.0](./LICENSE)
