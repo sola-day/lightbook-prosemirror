@@ -25,7 +25,7 @@ const BLANK_PARAGRAPH_MARKER = " ";
  * Serialize a document to Markdown. Table nodes and comment/suggestion marks
  * are intentionally NOT round-tripped through Markdown — Markdown is treated
  * as an import/export/paste format, not the source of truth (the ProseMirror
- * doc / Yjs doc is). Tables degrade to a GFM table when every cell is a
+ * doc / Loro doc is). Tables degrade to a GFM table when every cell is a
  * single paragraph, otherwise fall back to an HTML table so content is never
  * silently lost.
  */

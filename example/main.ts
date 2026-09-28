@@ -1,8 +1,9 @@
-import * as Y from "yjs";
-import { Awareness } from "y-protocols/awareness";
+import { LoroDoc } from "loro-crdt";
 import {
   createEditor,
   createCollab,
+  bridgeLoroDocs,
+  bridgeEphemeralStores,
   docToMarkdown,
   markdownToDoc,
   addComment,
@@ -14,9 +15,6 @@ import {
 import "../src/style.css";
 import "./example.css";
 
-const ydoc = new Y.Doc();
-const awareness = new Awareness(ydoc);
-
 const userA = { name: "Alice", color: "#4285f4" };
 const userB = { name: "Bob", color: "#ea4335" };
 
@@ -25,11 +23,18 @@ document.getElementById("user-a-badge")!.textContent = userA.name;
 document.getElementById("user-b-badge")!.textContent = userB.name;
 (document.getElementById("user-b-badge") as HTMLElement).style.background = userB.color;
 
-// Two editors sharing one Y.Doc — this is the real-time collaboration demo.
-// Each gets its own Awareness client state (cursor color/name) but they are
-// bound to the SAME underlying ydoc, so edits in one instantly propagate to
-// the other purely in-memory (no network needed for the demo).
-const collabA = createCollab(ydoc, userA, awareness);
+// Two editors, two INDEPENDENT LoroDoc peers — this is the real-time
+// collaboration demo. Unlike Yjs's single shared Y.Doc, each Loro peer owns
+// its own document; `bridgeLoroDocs`/`bridgeEphemeralStores` forward each
+// side's local update bytes to the other in-memory, simulating exactly what
+// a websocket/webrtc relay would carry over the network.
+const docA = new LoroDoc();
+const docB = new LoroDoc();
+const collabA = createCollab(docA, userA);
+const collabB = createCollab(docB, userB);
+bridgeLoroDocs(docA, docB);
+bridgeEphemeralStores(collabA.presence, collabB.presence);
+
 const viewA = createEditor({
   mount: document.getElementById("editor-a")!,
   authorId: "alice",
@@ -37,9 +42,6 @@ const viewA = createEditor({
   onChange: () => refreshThreadList(),
 });
 
-const ydocBView = ydoc; // same doc; a second Awareness client simulates a second peer
-const awarenessB = new Awareness(ydocBView);
-const collabB = createCollab(ydocBView, userB, awarenessB);
 const viewB = createEditor({
   mount: document.getElementById("editor-b")!,
   authorId: "bob",
@@ -122,7 +124,7 @@ if (viewA.state.doc.content.size <= 2) {
       "| Markdown | done |",
       "| Comments | done |",
       "| Suggesting | done |",
-      "| Yjs collab | done |",
+      "| Loro collab | done |",
       "",
       "- Try selecting a sentence and clicking **Comment on selection**",
       "- Try toggling **Suggesting** and typing a change",

@@ -14,7 +14,7 @@ import type { CollabSetup } from "./collab";
 
 export { lightbookSchema } from "./schema";
 export { markdownToDoc, docToMarkdown } from "./markdown";
-export { createCollab } from "./collab";
+export { createCollab, bridgeLoroDocs, bridgeEphemeralStores } from "./collab";
 export type { CollabSetup, CollabUser } from "./collab";
 export * from "./comments";
 export * from "./menus";
@@ -56,7 +56,7 @@ export interface CreateEditorOptions {
 /**
  * Assemble a full lightbook-prosemirror editor: base schema, markdown-style
  * input rules, tables, comments, suggestion mode, and (optionally) realtime
- * Yjs collaboration. This is the single entry point apps (Lightbook web,
+ * Loro CRDT collaboration. This is the single entry point apps (Lightbook web,
  * the example page, eventually a rewritten Outline editor) are meant to use.
  */
 export function createEditor(options: CreateEditorOptions): EditorView {
@@ -79,7 +79,8 @@ export function createEditor(options: CreateEditorOptions): EditorView {
   }
 
   if (options.collab) {
-    // Collaborative history replaces prosemirror-history's local undo stack.
+    // Loro's collaborative undo (LoroUndoPlugin) replaces prosemirror-history's
+    // local undo stack.
     plugins.push(...options.collab.plugins);
   } else {
     plugins.push(history());

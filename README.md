@@ -17,16 +17,16 @@ depend on once it's proven out, covering:
 - **Markdown import/export**: a hand-written `MarkdownParser`/`MarkdownSerializer`
   pairing (via `markdown-it`) with GFM tables and strikethrough. Markdown is
   treated as an interchange format (paste/import/export), not the source of
-  truth — the ProseMirror/Yjs document is.
+  truth — the ProseMirror/Loro document is.
 - **Google-Docs-style comments**: a `comment` mark anchors threads to text
   ranges; thread content/authorship live outside the editor and are keyed by
   the same `threadId`.
 - **Google-Docs-style "Suggesting" mode**: edits made while suggesting is
   active are tagged (`suggestion_insert` / `suggestion_delete`) instead of
   applied directly, so they can be reviewed and accepted/rejected later.
-- **Realtime collaboration**: Yjs + `y-prosemirror` binding with live remote
-  cursors and collaborative undo — the same approach Outline uses, wired up
-  independently for this schema.
+- **Realtime collaboration**: [Loro](https://loro.dev) CRDT + `loro-prosemirror`
+  binding, with live remote cursors (via Loro's `EphemeralStore` presence
+  channel) and collaborative undo/redo.
 
 ## Structure
 
@@ -35,7 +35,7 @@ src/
   schema/        node & mark specs, assembled Schema
   markdown.ts    Markdown <-> ProseMirror doc conversion
   comments/      comment threads + suggestion-mode plugins
-  collab.ts      Yjs / y-prosemirror binding helper
+  collab.ts      Loro / loro-prosemirror binding helper
   keymap.ts      base keymap (bold/italic/lists/headings/tables)
   index.ts       createEditor() — the single entry point
 example/         a runnable demo page (two live-synced editors,

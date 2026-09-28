@@ -13,16 +13,17 @@
       <p>
         Shared ProseMirror editor core for Lightbook — Outline-style rich
         blocks and tables, Markdown import/export, Google-Docs-style
-        comments &amp; suggesting, and Yjs realtime collaboration. Built
+        comments &amp; suggesting, and Loro CRDT realtime collaboration. Built
         fresh for this package, not copied from Outline.
       </p>
     </header>
 
     <section class="lb-panel">
-      <h2>Realtime collaboration (two editors, one Yjs doc)</h2>
+      <h2>Realtime collaboration (two editors, two Loro peers)</h2>
       <p class="lb-hint">
-        Type in either pane — both stay in sync through the same in-memory
-        Y.Doc via <code>y-prosemirror</code>, with live remote cursors.
+        Type in either pane — each has its own <code>LoroDoc</code> peer,
+        bridged in-memory via <code>loro-prosemirror</code>, with live
+        remote cursors.
       </p>
       <div class="lb-collab-grid">
         <div>
